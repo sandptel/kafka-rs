@@ -17,7 +17,7 @@ struct Message{
 
 fn handle_client(mut stream: TcpStream)
 {
-    let mut buf = [0,0,0,0,0,0,0,7];
+    let buf = [0,0,0,0,0,0,0,7];
     stream.write(&buf).unwrap();
 }
 
