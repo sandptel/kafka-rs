@@ -1,8 +1,8 @@
 #![allow(unused_imports)]
-use byteorder::{BigEndian, WriteBytesExt};
-use bytes::{Bytes, BytesMut};
-use std::io::{Cursor, Read, Write};
-use std::net::{TcpListener, TcpStream};
+use byteorder::{ BigEndian, WriteBytesExt };
+use bytes::{ Bytes, BytesMut };
+use std::io::{ Cursor, Read, Write };
+use std::net::{ TcpListener, TcpStream };
 #[derive(Debug)]
 struct Message {
     message_size: u32,
@@ -14,7 +14,34 @@ struct Message {
 #[derive(Debug)]
 enum ErrorCode {
     ApiVersion,
-    Other,
+    // Zero,
+}
+
+#[derive(Debug)]
+struct ApiKeyVersionInfo {
+    len: u8,
+    id: i16,
+    max: i16,
+    min: i16,
+    tagged_fields: u8,
+    throttle_time: i32,
+    response_tagged: u8,
+}
+
+impl ApiKeyVersionInfo {
+    fn response(&self) -> Vec<u8> {
+        let mut retbuf = Vec::new();
+        retbuf.write_u8(self.len).expect("error while writing Api Key Length");
+        retbuf.write_i16::<BigEndian>(self.id).expect("error while writing API Ver Info");
+        retbuf.write_i16::<BigEndian>(self.min).expect("error while writing API Ver Info");
+        retbuf.write_i16::<BigEndian>(self.max).expect("error while writing API Ver Info");
+        retbuf.write_u8(self.tagged_fields).expect("error while writing API Ver Info");
+        retbuf
+            .write_i32::<BigEndian>(self.throttle_time)
+            .expect("error while writing API Ver Info");
+        retbuf.write_u8(self.response_tagged).expect("error while writing API Ver Info");
+        retbuf
+    }
 }
 
 impl Message {
@@ -26,7 +53,7 @@ impl Message {
 
         let mut error: Option<ErrorCode> = None;
         if request_api_version > 4 || request_api_version < 0 {
-            error = Some(ErrorCode::ApiVersion)
+            error = Some(ErrorCode::ApiVersion);
         }
         let message = Message {
             message_size,
@@ -37,31 +64,53 @@ impl Message {
         };
 
         let mut retbuf = Vec::new();
-        retbuf
-            .write_u32::<BigEndian>(0)
-            .expect("Unable to write into buffer");
-        retbuf
-            .write_u32::<BigEndian>(correlation_id)
-            .expect("Unable to write into buffer");
+        retbuf.write_u32::<BigEndian>(0).expect("Unable to write into buffer");
+        retbuf.write_u32::<BigEndian>(correlation_id).expect("Unable to write into buffer");
 
         message
     }
 
     fn response(&self) -> Vec<u8> {
         let mut retbuf = Vec::new();
-        retbuf
-            .write_u32::<BigEndian>(0)
-            .expect("Unable to write into buffer");
-        retbuf
-            .write_u32::<BigEndian>(self.correlation_id)
-            .expect("Unable to write into buffer");
+        retbuf.write_u32::<BigEndian>(0).expect("Unable to write into buffer");
+        retbuf.write_u32::<BigEndian>(self.correlation_id).expect("Unable to write into buffer");
 
         match self.error {
             Some(ErrorCode::ApiVersion) => {
-                retbuf.write_u16::<BigEndian>(35).expect("error while writing ErrorCode");
+                retbuf.write_i16::<BigEndian>(35).expect("error while writing ErrorCode");
             }
-            _ => {}
+            // Some(ErrorCode::Zero)=>{
+            //     retbuf.write_u16::<BigEndian>(0).expect("error while writing ErrorCode");
+            // }
+            _ => {
+                retbuf.write_i16::<BigEndian>(0).expect("error while writing ErrorCode");
+            }
         }
+        let api_version_info = ApiKeyVersionInfo {
+            len: 2,
+            id: 18,
+            min: 0,
+            max: 4,
+            throttle_time: 0,
+            tagged_fields: 0,
+            response_tagged: 0,
+        };
+        let api_response_buf = api_version_info.response();
+        // retbuf.write_u8(2).expect("error while writing Api Key Length");
+        // retbuf.write_i16::<BigEndian>(18).expect("error while writing API Ver Info");
+        // retbuf.write_i16::<BigEndian>(0).expect("error while writing API Ver Info");
+        // retbuf.write_i16::<BigEndian>(4).expect("error while writing API Ver Info");
+        // retbuf.write_u8(0).expect("error while writing API Ver Info");
+        // retbuf.write_i32::<BigEndian>(0).expect("error while writing API Ver Info");
+        // retbuf.write_u8(0).expect("error while writing API Ver Info");
+
+        retbuf.write(&api_response_buf).expect("error while writing api version keys");
+
+        let message_size = (retbuf.len() - 4) as u32;
+
+        // Update the size field at the beginning of the buffer
+        retbuf[0..4].copy_from_slice(&message_size.to_be_bytes());
+
         retbuf
     }
 }
@@ -78,9 +127,7 @@ fn handle_client(mut stream: TcpStream) {
             println!("returned buffer : {:?}", retbuf);
             stream.write(&retbuf).unwrap();
         }
-        Err(e) => {
-            println!("{:?}", e)
-        }
+        Err(e) => { println!("{:?}", e) }
     }
 }
 
