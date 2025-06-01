@@ -1,7 +1,8 @@
 #![allow(unused_imports)]
 use std::net::{TcpListener, TcpStream};
-use std::io::{Read,Write};
-
+use std::io::{Read,Write,Cursor};
+use bytes::{Bytes, BytesMut};
+use byteorder::{BigEndian, WriteBytesExt};
 struct Header{
     // request_api_key : i16,
     // request_api_version:i16,
@@ -17,7 +18,16 @@ struct Message{
 
 fn handle_client(mut stream: TcpStream)
 {
-    let mut buf = [0,0,0,0,0,0,0,7];
+    // let buf = [0,0,0,0,0,0,0,7];
+    let mut buf = Vec::new();
+    buf.write_u32::<BigEndian>(0).expect("Unable to write into buffer");
+    let request_api_key :i16 = 0;
+    let request_api_version : i16 = 0;
+    let correlation_id :i16 = 7;
+    buf.write_i16::<BigEndian>(request_api_key).expect("Errror Writing the api key");
+    buf.write_i16::<BigEndian>(request_api_version).expect("Errror Writing the api version");
+    buf.write_i16::<BigEndian>(correlation_id).expect("Errror Writing the correlation_id");
+    eprintln!("{:?}",&buf);
     stream.write(&buf).unwrap();
 }
 
