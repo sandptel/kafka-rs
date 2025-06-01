@@ -3,17 +3,49 @@ use byteorder::{BigEndian, WriteBytesExt};
 use bytes::{Bytes, BytesMut};
 use std::io::{Cursor, Read, Write};
 use std::net::{TcpListener, TcpStream};
-struct Header {
-    // request_api_key : i16,
-    // request_api_version:i16,
-    correlation_id: i32,
-    // client_id: String,
-}
 
 struct Message {
     message_size: u32,
-    body: String,
-    header: Header,
+    request_api_key: u16,
+    request_api_version: u16,
+    correlation_id: u32,
+}
+
+impl Message {
+    fn new(buf: &[u8; 1024]) -> Self {
+        let message_size = u32::from_be_bytes(buf[0..4].try_into().unwrap());
+        let request_api_key = u16::from_be_bytes(buf[4..6].try_into().unwrap());
+        let request_api_version = u16::from_be_bytes(buf[6..8].try_into().unwrap());
+        let correlation_id = u32::from_be_bytes(buf[8..12].try_into().unwrap());
+
+        let message = Message {
+            message_size,
+            request_api_key,
+            request_api_version,
+            correlation_id,
+        };
+
+        let mut retbuf = Vec::new();
+        retbuf
+            .write_u32::<BigEndian>(0)
+            .expect("Unable to write into buffer");
+        retbuf
+            .write_u32::<BigEndian>(correlation_id)
+            .expect("Unable to write into buffer");
+
+        message
+    }
+
+    fn response(&self) -> Vec<u8> {
+        let mut retbuf = Vec::new();
+        retbuf
+            .write_u32::<BigEndian>(0)
+            .expect("Unable to write into buffer");
+        retbuf
+            .write_u32::<BigEndian>(self.correlation_id)
+            .expect("Unable to write into buffer");
+        retbuf
+    }
 }
 
 fn handle_client(mut stream: TcpStream) {
@@ -21,23 +53,15 @@ fn handle_client(mut stream: TcpStream) {
 
     match stream.read(&mut buf) {
         Ok(bytes) => {
-            println!("Bytes: {}", bytes);
-            let message_size = u32::from_be_bytes(buf[0..4].try_into().unwrap());
-            let request_api_key = u16::from_be_bytes(buf[4..6].try_into().unwrap());
-            let request_api_version = u16::from_be_bytes(buf[6..8].try_into().unwrap());
-            let correlation_id = u32::from_be_bytes(buf[8..12].try_into().unwrap());
-
-            println!("message_size: {}", message_size);
-            println!("request_api_key: {}", request_api_key);
-            println!("request_api_version: {}", request_api_version);
-            println!("correlation_id: {}", correlation_id);
-            let mut retbuf = Vec::new();
-            retbuf.write_u32::<BigEndian>(0).expect("Unable to write into buffer");
-            retbuf.write_u32::<BigEndian>(correlation_id).expect("Unable to write into buffer");
-            println!("returned buffer : {:?}",retbuf);
+            eprintln!("Amount of Recieved Bytes: {}", bytes);
+            let message  = Message::new(&buf);
+            let retbuf = message.response();
+            println!("returned buffer : {:?}", retbuf);
             stream.write(&retbuf).unwrap();
         }
-        Err(e) => {println!("{:?}",e)}
+        Err(e) => {
+            println!("{:?}", e)
+        }
     }
 }
 
