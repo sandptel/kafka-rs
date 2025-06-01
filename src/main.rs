@@ -3,12 +3,18 @@ use byteorder::{BigEndian, WriteBytesExt};
 use bytes::{Bytes, BytesMut};
 use std::io::{Cursor, Read, Write};
 use std::net::{TcpListener, TcpStream};
-
+#[derive(Debug)]
 struct Message {
     message_size: u32,
     request_api_key: u16,
     request_api_version: u16,
     correlation_id: u32,
+    error: Option<ErrorCode>,
+}
+#[derive(Debug)]
+enum ErrorCode {
+    ApiVersion,
+    Other,
 }
 
 impl Message {
@@ -18,11 +24,16 @@ impl Message {
         let request_api_version = u16::from_be_bytes(buf[6..8].try_into().unwrap());
         let correlation_id = u32::from_be_bytes(buf[8..12].try_into().unwrap());
 
+        let mut error: Option<ErrorCode> = None;
+        if request_api_version > 4 || request_api_version < 0 {
+            error = Some(ErrorCode::ApiVersion)
+        }
         let message = Message {
             message_size,
             request_api_key,
             request_api_version,
             correlation_id,
+            error,
         };
 
         let mut retbuf = Vec::new();
@@ -44,6 +55,13 @@ impl Message {
         retbuf
             .write_u32::<BigEndian>(self.correlation_id)
             .expect("Unable to write into buffer");
+
+        match self.error {
+            Some(ErrorCode::ApiVersion) => {
+                retbuf.write_u16::<BigEndian>(35).expect("error while writing ErrorCode");
+            }
+            _ => {}
+        }
         retbuf
     }
 }
@@ -54,7 +72,8 @@ fn handle_client(mut stream: TcpStream) {
     match stream.read(&mut buf) {
         Ok(bytes) => {
             eprintln!("Amount of Recieved Bytes: {}", bytes);
-            let message  = Message::new(&buf);
+            let message = Message::new(&buf);
+            println!("Message : {:?}", &message);
             let retbuf = message.response();
             println!("returned buffer : {:?}", retbuf);
             stream.write(&retbuf).unwrap();
